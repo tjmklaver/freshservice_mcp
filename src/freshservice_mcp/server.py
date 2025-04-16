@@ -385,6 +385,7 @@ async def get_ticket_by_id(ticket_id:int) -> str:
 #GET SERVICE ITEMS
 @mcp.tool()
 async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
+    """Get list of service items from Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/service_catalog/items"
 
     if page < 1:
@@ -966,7 +967,7 @@ async def create_requester(
 #GET ALL REQUESTER
 @mcp.tool()
 async def get_all_requesters(page: int = 1, per_page: int = 30) -> Dict[str, Any]:
-    """Fetch requesters from Freshservice with pagination support."""
+    """Fetch all requesters from Freshservice."""
     if page < 1:
         return {"success": False, "error": "Page number must be greater than 0"}
     
@@ -1007,7 +1008,7 @@ async def get_all_requesters(page: int = 1, per_page: int = 30) -> Dict[str, Any
 #GET REQUESTERS BY ID
 @mcp.tool()
 async def get_requester_id(requester_id:int)-> Dict[str, Any]:
-    """List all requester in Freshservice"""
+    """Get requester by ID in Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requesters/{requester_id}"
     headers = get_auth_headers()
    
@@ -1022,7 +1023,7 @@ async def get_requester_id(requester_id:int)-> Dict[str, Any]:
 #LIST ALL REQUESTER FIELDS
 @mcp.tool()
 async def list_all_requester_fields()-> Dict[str, Any]:
-    """List all requester in Freshservice"""
+    """List all requester fields in Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requester_fields"
     headers = get_auth_headers()
    
@@ -1034,7 +1035,7 @@ async def list_all_requester_fields()-> Dict[str, Any]:
         else:
             return f"Cannot fetch requester from the freshservice ${response.json()}"
         
-#UPDATE REQUESTERS
+#UPDATE REQUESTER
 @mcp.tool()
 async def update_requester(
     requester_id: int,
@@ -1164,7 +1165,7 @@ async def create_agent(
 #GET AN AGENT
 @mcp.tool()
 async def get_agent(agent_id:int)-> Dict[str, Any]:
-    """Get agent by agent_id in Freshservice"""
+    """Get agent by id in Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agents/{agent_id}"
     headers = get_auth_headers()
    
@@ -1179,7 +1180,7 @@ async def get_agent(agent_id:int)-> Dict[str, Any]:
 #GET ALL AGENTS
 @mcp.tool()
 async def get_all_agents(page: int = 1, per_page: int = 30) -> Dict[str, Any]:
-    """Fetch agents from Freshservice with pagination support."""
+    """Fetch agents from Freshservice."""
     if page < 1:
         return {"success": False, "error": "Page number must be greater than 0"}
 
@@ -1221,7 +1222,7 @@ async def get_all_agents(page: int = 1, per_page: int = 30) -> Dict[str, Any]:
                 error_text = e.response.text if e.response else None
 
             return {
-                "error": f"Failed to create solution folder: {str(e)}",
+                "error": f"Failed to get all agents: {str(e)}",
                 "status_code": e.response.status_code if e.response else None,
                 "details": error_text
             }
@@ -1300,7 +1301,7 @@ async def update_agent(agent_id, occasional=None, email=None, department_ids=Non
 #GET AGENT FIELDS
 @mcp.tool()
 async def get_agent_fields()-> Dict[str, Any]:
-    """Get all agent fields in  Freshservice"""
+    """Get all agent fields in Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agent_fields"
     headers = get_auth_headers()
    
@@ -1315,7 +1316,7 @@ async def get_agent_fields()-> Dict[str, Any]:
 #GET ALL AGENT GROUPS
 @mcp.tool()
 async def get_all_agent_groups()-> Dict[str, Any]:
-    """Get all agent groups in  Freshservice"""
+    """Get all agent groups in Freshservice"""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/groups"
     headers = get_auth_headers()
    
@@ -1330,7 +1331,7 @@ async def get_all_agent_groups()-> Dict[str, Any]:
 #GET AGENT GROUP BY ID
 @mcp.tool()
 async def getAgentGroupById(group_id:int)-> Dict[str, Any]:
-    """Get agent groups by its group id in  Freshservice"""
+    """Get agent groups by its group id in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/groups/{group_id}"
     headers = get_auth_headers()
    
@@ -1711,7 +1712,7 @@ async def list_all_canned_response_folder() -> Dict[str, Any]:
 async def list_canned_response_folder(
     id: int
 ) -> Dict[str, Any]:
-    """List canned response folder  Freshservice."""
+    """List canned response folder in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/canned_response_folders/{id}"
     headers = get_auth_headers()
 
@@ -2026,7 +2027,7 @@ async def get_solution_folder(id: int) -> Dict[str, Any]:
 #GET LIST OF SOLUTION ARTICLE
 @mcp.tool()
 async def get_list_of_solution_article(id:int) -> Dict[str, Any]:
-    """Get list of solution folder by its ID in Freshservice."""
+    """Get list of solution article in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/solutions/articles?folder_id={id}"
     headers = get_auth_headers()
 
@@ -2045,7 +2046,7 @@ async def get_list_of_solution_article(id:int) -> Dict[str, Any]:
                 error_text = e.response.text if e.response else None
 
             return {
-                "error": f"Failed to fetch list of solution folder: {str(e)}",
+                "error": f"Failed to fetch list of solution article: {str(e)}",
                 "status_code": e.response.status_code if e.response else None,
                 "details": error_text
             }
@@ -2058,7 +2059,7 @@ async def get_list_of_solution_article(id:int) -> Dict[str, Any]:
 #GET SOLUTION ARTICLE
 @mcp.tool()
 async def get_solution_article(id:int) -> Dict[str, Any]:
-    """Get list of solution folder by its ID in Freshservice."""
+    """Get solution article by id in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/solutions/articles/{id}"
     headers = get_auth_headers()
 
