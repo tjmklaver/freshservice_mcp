@@ -1,24 +1,24 @@
-import httpx
-from mcp.server.fastmcp import FastMCP
-import logging
 import os
-import base64
-from typing import Optional, Dict, Union, Any, List
-from enum import IntEnum, Enum
 import re   
-from pydantic import BaseModel, Field
+import httpx
+import logging
+import base64
 import json
 import urllib.parse
+from typing import Optional, Dict, Union, Any, List
+from mcp.server.fastmcp import FastMCP
+from enum import IntEnum, Enum
+from pydantic import BaseModel, Field
 
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Create MCP instance
+# Create MCP INSTANCE
 mcp = FastMCP("freshservice_mcp")
 
 
-# Fetch API credentials
+# API CREDENTIALS
 FRESHSERVICE_DOMAIN = os.getenv("FRESHSERVICE_DOMAIN")
 FRESHSERVICE_APIKEY = os.getenv("FRESHSERVICE_APIKEY")
 
@@ -265,7 +265,6 @@ async def create_ticket(
         except Exception as e:
             return f"Error: An unexpected error occurred - {str(e)}"
 
-        
 #UPDATE TICKET
 @mcp.tool()
 async def update_ticket(ticket_id: int, ticket_fields: Dict[str, Any]) -> Dict[str, Any]:
@@ -315,7 +314,7 @@ async def update_ticket(ticket_id: int, ticket_fields: Dict[str, Any]) -> Dict[s
                 "error": f"An unexpected error occurred: {str(e)}"
             }
             
-# FILTER TICKET 
+#FILTER TICKET 
 @mcp.tool()
 async def filter_tickets(query: str, page: int = 1, workspace_id: Optional[int] = None) -> Dict[str, Any]:
     """
@@ -350,7 +349,7 @@ async def filter_tickets(query: str, page: int = 1, workspace_id: Optional[int] 
             except Exception:
                 return {"error": str(e), "raw_response": e.response.text}
         
-# DELETE TICKET.
+#DELETE TICKET.
 @mcp.tool()
 async def delete_ticket(ticket_id: int) -> str:
     """Delete a ticket in Freshdesk."""
@@ -372,7 +371,7 @@ async def delete_ticket(ticket_id: int) -> str:
             except ValueError:
                 return "Error: Unexpected response format"
     
-# GET TICKET BY ID  
+#GET TICKET BY ID  
 @mcp.tool()
 async def get_ticket_by_id(ticket_id:int) -> str:
     """Get a specific ticket by its ID"""
@@ -383,6 +382,7 @@ async def get_ticket_by_id(ticket_id:int) -> str:
         response = await client.get(url,headers=headers)
         return response.json()
     
+#GET SERVICE ITEMS
 @mcp.tool()
 async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/service_catalog/items"
@@ -432,7 +432,8 @@ async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 
             "last_fetched_page": current_page
         }
     }
-        
+       
+#GET REQUESTED ITEMS 
 @mcp.tool()
 async def get_requested_items(ticket_id: int) -> dict:
     """Fetch requested items for a specific ticket if the ticket is a service request."""
@@ -488,7 +489,6 @@ async def get_requested_items(ticket_id: int) -> dict:
         except Exception as e:
             return {"success": False, "error": f"An unexpected error occurred: {str(e)}"}
 
-
 #CREATE SERVICE REQUEST
 @mcp.tool()
 async def create_service_request(
@@ -542,6 +542,7 @@ async def create_service_request(
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+#SEND TICKET REPLY
 @mcp.tool()
 async def send_ticket_reply(
     ticket_id: int,
@@ -626,6 +627,8 @@ async def create_ticket_note(ticket_id: int,body: str)-> Dict[str, Any]:
         return response.json()
     
  #UPDATE A CONVERSATION
+
+#UPDATE TICKET CONVERSATION
 @mcp.tool()
 async def update_ticket_conversation(conversation_id: int,body: str)-> Dict[str, Any]:
     """Update a conversation for a ticket in Freshservice."""
@@ -642,6 +645,7 @@ async def update_ticket_conversation(conversation_id: int,body: str)-> Dict[str,
         else:
             return f"Cannot update conversation ${response.json()}"
         
+#GET ALL TICKET CONVERSATION
 @mcp.tool()
 async def list_all_ticket_conversation(ticket_id: int)-> Dict[str, Any]:
     """List all conversation of a ticket in freshservice"""
@@ -656,7 +660,6 @@ async def list_all_ticket_conversation(ticket_id: int)-> Dict[str, Any]:
         else:
             return f"Cannot fetch ticket conversations ${response.json()}"
         
-#PRODUCTS 
 #GET ALL PRODUCTS
 @mcp.tool()
 async def get_all_products(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
@@ -721,6 +724,7 @@ async def get_products_by_id(product_id:int)-> Dict[str, Any]:
         else:
             return f"Cannot fetch products from the freshservice ${response.json()}"
         
+#CREATE PRODUCT
 @mcp.tool()
 async def create_product(
     name: str,
@@ -797,6 +801,7 @@ async def create_product(
                 "success": False,
                 "error": f"An unexpected error occurred: {err}"
             }
+
 #UPDATE PRODUCT 
 @mcp.tool()
 async def update_product(
@@ -1119,8 +1124,6 @@ async def filter_requesters(query: str,include_agents: bool = False) -> Dict[str
                 "details": response.text
             }
 
-            
-#Agents
 #CREATE AN AGENT
 @mcp.tool()
 async def create_agent(
@@ -1293,8 +1296,7 @@ async def update_agent(agent_id, occasional=None, email=None, department_ids=Non
             return response.json()
         else:
             return f"Cannot fetch agents from the freshservice ${response.json()}"
-            
-            
+                      
 #GET AGENT FIELDS
 @mcp.tool()
 async def get_agent_fields()-> Dict[str, Any]:
@@ -2239,7 +2241,6 @@ async def create_solution_folder(
                 "error": f"Unexpected error occurred: {str(e)}"
             }
 
-
 #UPDATE SOLUTION FOLDER
 @mcp.tool()
 async def update_solution_folder(
@@ -2316,7 +2317,7 @@ async def publish_solution_article(article_id: int) -> Dict[str, Any]:
                 "error": f"Unexpected error occurred: {str(e)}"
             }
 
-# GET DEFAULT AUTH HEADERS
+# GET AUTH HEADERS
 def get_auth_headers():
     return {
         "Authorization": f"Basic {base64.b64encode(f'{FRESHSERVICE_APIKEY}:X'.encode()).decode()}",
