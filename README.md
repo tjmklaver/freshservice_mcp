@@ -1,5 +1,7 @@
 # Freshservice MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@effytech/freshservice_mcp)](https://smithery.ai/server/@effytech/freshservice_mcp)
+
 ## Overview
 
 A powerful MCP (Model Control Protocol) server implementation that seamlessly integrates with Freshservice, enabling AI models to interact with Freshservice modules and perform various IT service management operations. This integration bridge empowers your AI assistants to manage and resolve IT service tickets, streamlining your support workflow.
@@ -129,5 +131,3 @@ This MCP server is licensed under the MIT License. See the LICENSE file in the p
 ---
 
 <p align="center">Built with ❤️ by effy</p>
-
-
