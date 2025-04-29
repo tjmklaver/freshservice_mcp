@@ -6,13 +6,18 @@ import base64
 import json
 import urllib.parse
 from typing import Optional, Dict, Union, Any, List
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP 
 from enum import IntEnum, Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field 
 
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv 
 load_dotenv()
+
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
 
 # Create MCP INSTANCE
 mcp = FastMCP("freshservice_mcp")
@@ -195,24 +200,7 @@ async def create_ticket(
     requester_id: Optional[int] = None,
     custom_fields: Optional[Dict[str, Any]] = None
 ) -> str:
-    """
-    Create a ticket in Freshservice.
-
-    Accepted values for:
-    
-    - source (int or str):
-        'email' (1), 'portal' (2), 'phone' (3), 'yammer' (6), 'chat' (7), 'aws_cloudwatch' (7),
-        'pagerduty' (8), 'walk_up' (9), 'slack' (10), 'workplace' (12),
-        'employee_onboarding' (13), 'alerts' (14), 'ms_teams' (15), 'employee_offboarding' (18)
-
-    - priority (int or str):
-        'low' (1), 'medium' (2), 'high' (3), 'urgent' (4)
-
-    - status (int or str):
-        'open' (2), 'pending' (3), 'resolved' (4), 'closed' (5)
-
-    Either `email` or `requester_id` must be provided.
-    """
+    """Create a ticket in Freshservice."""
     
     if not email and not requester_id:
         return "Error: Either email or requester_id must be provided"
@@ -317,19 +305,7 @@ async def update_ticket(ticket_id: int, ticket_fields: Dict[str, Any]) -> Dict[s
 #FILTER TICKET 
 @mcp.tool()
 async def filter_tickets(query: str, page: int = 1, workspace_id: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Filter tickets based on a query string.
-    
-    Notes:
-    - Query must be properly URL encoded.
-    - Logical operators AND, OR can be used.
-    - String values must be enclosed in single quotes.
-    - Date format: 'yyyy-mm-dd'.
-    - Supported operators: =, :>, :<
-
-    Example query (before encoding):
-    "priority: 1 AND status: 2 OR urgency: 3"
-    """
+    """Filter the tickets in Freshservice."""
     encoded_query = urllib.parse.quote(query)
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/tickets/filter?query={encoded_query}&page={page}"
     
@@ -352,7 +328,7 @@ async def filter_tickets(query: str, page: int = 1, workspace_id: Optional[int] 
 #DELETE TICKET.
 @mcp.tool()
 async def delete_ticket(ticket_id: int) -> str:
-    """Delete a ticket in Freshdesk."""
+    """Delete a ticket in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/tickets/{ticket_id}"
     headers = get_auth_headers()
 
@@ -374,7 +350,7 @@ async def delete_ticket(ticket_id: int) -> str:
 #GET TICKET BY ID  
 @mcp.tool()
 async def get_ticket_by_id(ticket_id:int) -> str:
-    """Get a specific ticket by its ID"""
+    """Get a ticket in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/tickets/{ticket_id}"
     headers = get_auth_headers()
 
@@ -385,7 +361,7 @@ async def get_ticket_by_id(ticket_id:int) -> str:
 #GET SERVICE ITEMS
 @mcp.tool()
 async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
-    """Get list of service items from Freshservice"""
+    """Get list of service items from Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/service_catalog/items"
 
     if page < 1:
@@ -498,18 +474,7 @@ async def create_service_request(
     requested_for: Optional[str] = None,
     quantity: int = 1
 ) -> dict:
-    """
-    Place a service request in Freshservice.
-    
-    Args:
-        display_id (int): The display ID of the service catalog item.
-        email (str): Email of the requester.
-        requested_for (Optional[str]): Email of the person the request is for.
-        quantity (int): Number of items requested (must be a positive integer).
-    
-    Returns:
-        dict: The response from the API.
-    """
+    """Create a service request in Freshservice."""
     if not isinstance(quantity, int) or quantity <= 0:
         return {"success": False, "error": "Quantity must be a positive integer."}
 
@@ -554,20 +519,7 @@ async def send_ticket_reply(
     bcc_emails: Optional[Union[str, List[str]]] = None
 ) -> dict:
     """
-    Send a reply to a ticket in Freshservice.
-
-    Required:
-        - ticket_id (int): Must be >= 1
-        - body (str): Message content
-
-    Optional:
-        - from_email (str): Sender's email
-        - user_id (int): Agent user ID
-        - cc_emails (list or str): List of emails to CC
-        - bcc_emails (list or str): List of emails to BCC
-
-    Note: Attachments are not supported in this version.
-    """
+    Send reply to a ticket in Freshservice."""
 
     # Validation
     if not ticket_id or not isinstance(ticket_id, int) or ticket_id < 1:
@@ -649,7 +601,7 @@ async def update_ticket_conversation(conversation_id: int,body: str)-> Dict[str,
 #GET ALL TICKET CONVERSATION
 @mcp.tool()
 async def list_all_ticket_conversation(ticket_id: int)-> Dict[str, Any]:
-    """List all conversation of a ticket in freshservice"""
+    """List all conversation of a ticket in freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/tickets/{ticket_id}/conversations"
     headers = get_auth_headers()
    
@@ -664,10 +616,7 @@ async def list_all_ticket_conversation(ticket_id: int)-> Dict[str, Any]:
 #GET ALL PRODUCTS
 @mcp.tool()
 async def get_all_products(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
-    """
-    Fetch one page of products from Freshservice with pagination support.
-    Returns the page data and info about whether a next page exists.
-    """
+    """List all the products from Freshservice."""
     if page < 1:
         return {"error": "Page number must be greater than 0"}
     
@@ -713,7 +662,7 @@ async def get_all_products(page: Optional[int] = 1, per_page: Optional[int] = 30
 #GET PRODUCT BY ID
 @mcp.tool()
 async def get_products_by_id(product_id:int)-> Dict[str, Any]:
-    """List all products of a ticket in freshservice"""
+    """Get product by product ID in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/products/{product_id}"
     headers = get_auth_headers()
    
@@ -737,10 +686,7 @@ async def create_product(
     description: Optional[str] = None,
     description_text: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    Create a product in Freshservice with required and optional fields.
-    Validates 'status' to be one of: 'In Production', 'In Pipeline', 'Retired' or corresponding integer values.
-    """
+    """Create a product in Freshservice."""
 
     # Allowed statuses mapping
     allowed_statuses = {
@@ -816,10 +762,7 @@ async def update_product(
     description: Optional[str] = None,
     description_text: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    Update a product in Freshservice. Requires 'id', 'name', and 'asset_type_id'.
-    Optional fields: manufacturer, status, mode_of_procurement, depreciation_type_id, description, description_text.
-    """
+    """Update a product in Freshservice."""
 
     allowed_statuses = {
         "In Production": "In Production",
@@ -902,10 +845,7 @@ async def create_requester(
     background_information: Optional[str] = None,
     custom_fields: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """
-    Creates a requester in Freshservice.
-    'first_name' is required. Also requires at least one of: 'primary_email', 'work_phone_number', or 'mobile_phone_number'.
-    """
+    """Creates a requester in Freshservice."""
 
     if not isinstance(first_name, str) or not first_name.strip():
         return {"success": False, "error": "'first_name' must be a non-empty string."}
@@ -1008,7 +948,7 @@ async def get_all_requesters(page: int = 1, per_page: int = 30) -> Dict[str, Any
 #GET REQUESTERS BY ID
 @mcp.tool()
 async def get_requester_id(requester_id:int)-> Dict[str, Any]:
-    """Get requester by ID in Freshservice"""
+    """Get requester by ID in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requesters/{requester_id}"
     headers = get_auth_headers()
    
@@ -1023,7 +963,7 @@ async def get_requester_id(requester_id:int)-> Dict[str, Any]:
 #LIST ALL REQUESTER FIELDS
 @mcp.tool()
 async def list_all_requester_fields()-> Dict[str, Any]:
-    """List all requester fields in Freshservice"""
+    """List all requester fields in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requester_fields"
     headers = get_auth_headers()
    
@@ -1057,7 +997,7 @@ async def update_requester(
     background_information: Optional[str] = None,
     custom_fields: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Update a requester in Freshservice"""
+    """Update a requester in Freshservice."""
 
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requesters/{requester_id}"
     headers = get_auth_headers()
@@ -1094,19 +1034,7 @@ async def update_requester(
 #FILTER REQUESTERS
 @mcp.tool()
 async def filter_requesters(query: str,include_agents: bool = False) -> Dict[str, Any]:
-    """
-    Filter requesters based on requester attributes and custom fields.
-    
-    Notes:
-    - Query must be URL encoded.
-    - Logical operators AND, OR can be used.
-    - To filter for empty fields, use `null`.
-    - Use `~` for "starts with" text searches.
-    - `include_agents=true` will include agents in the results (requires permissions).
-
-    Example query (before encoding):
-    "~name:'john' AND created_at:> '2024-01-01'"
-    """
+    """Filter requesters in Freshservice."""
     encoded_query = urllib.parse.quote(query)
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requesters?query={encoded_query}"
     
@@ -1165,7 +1093,7 @@ async def create_agent(
 #GET AN AGENT
 @mcp.tool()
 async def get_agent(agent_id:int)-> Dict[str, Any]:
-    """Get agent by id in Freshservice"""
+    """Get agent by id in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agents/{agent_id}"
     headers = get_auth_headers()
    
@@ -1230,15 +1158,7 @@ async def get_all_agents(page: int = 1, per_page: int = 30) -> Dict[str, Any]:
 #FILTER AGENTS
 @mcp.tool()
 async def filter_agents(query: str) -> List[Dict[str, Any]]:
-    """
-    Filter Freshservice agents based on a query.
-
-    Args:
-        query: The filter query in URL-encoded format (e.g., "department_id:123 AND created_at:>'2024-01-01'")
-
-    Returns:
-        A list of matching agent records.
-    """
+    """Filter Freshservice agents based on a query."""
     base_url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agents"
     headers = get_auth_headers()
     all_agents = []
@@ -1268,7 +1188,7 @@ async def update_agent(agent_id, occasional=None, email=None, department_ids=Non
                  can_see_all_tickets_from_associated_departments=None, reporting_manager_id=None, 
                  address=None, time_zone=None, time_format=None, language=None, 
                  location_id=None, background_information=None, scoreboard_level_id=None):
-    """Update the agent details in the Freshservice"""
+    """Update the agent details in the Freshservice."""
     
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agents/{agent_id}"
     headers = get_auth_headers()
@@ -1301,7 +1221,7 @@ async def update_agent(agent_id, occasional=None, email=None, department_ids=Non
 #GET AGENT FIELDS
 @mcp.tool()
 async def get_agent_fields()-> Dict[str, Any]:
-    """Get all agent fields in Freshservice"""
+    """Get all agent fields in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/agent_fields"
     headers = get_auth_headers()
    
@@ -1316,7 +1236,7 @@ async def get_agent_fields()-> Dict[str, Any]:
 #GET ALL AGENT GROUPS
 @mcp.tool()
 async def get_all_agent_groups()-> Dict[str, Any]:
-    """Get all agent groups in Freshservice"""
+    """Get all agent groups in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/groups"
     headers = get_auth_headers()
    
@@ -1376,18 +1296,7 @@ async def add_requester_to_group(
 #CREATE GROUP
 @mcp.tool()
 async def create_group(group_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create a group in Freshservice using a plain dictionary.
-    
-    Required:
-      - name: str
-    Optional:
-      - description: str
-      - agent_ids: List[int]
-      - auto_ticket_assign: bool
-      - escalate_to: int
-      - unassigned_for: str (e.g. "thirty_minutes")
-    """
+    """Create a group in Freshservice."""
     if "name" not in group_data:
         return {"error": "Field 'name' is required to create a group."}
 
@@ -1416,7 +1325,7 @@ async def create_group(group_data: Dict[str, Any]) -> Dict[str, Any]:
 #UPDATE GROUP
 @mcp.tool()
 async def update_group(group_id: int, group_fields: Dict[str, Any]) -> Dict[str, Any]:
-    """Update a group in Freshdesk."""
+    """Update a group in Freshservice."""
     try:
         validated_fields = GroupCreate(**group_fields)
         group_data = validated_fields.model_dump(exclude_none=True)
@@ -1446,7 +1355,7 @@ async def update_group(group_id: int, group_fields: Dict[str, Any]) -> Dict[str,
 #GET ALL REQUETER GROUPS 
 @mcp.tool()
 async def get_all_requester_groups(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
-    """Get all requester groups in Freshservice with pagination support."""
+    """Get all requester groups in Freshservice."""
     if page < 1:
         return {"error": "Page number must be greater than 0"}
     
@@ -1491,7 +1400,7 @@ async def get_all_requester_groups(page: Optional[int] = 1, per_page: Optional[i
 #GET REQUETER GROUPS BY ID
 @mcp.tool()
 async def get_requester_groups_by_id(requester_group_id:int)-> Dict[str, Any]:
-    """Get requester groups by ID"""
+    """Get requester groups in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/requester_groups/{requester_group_id}"
     headers = get_auth_headers()
    
@@ -1543,7 +1452,7 @@ async def create_requester_group(
 #UPDATE REQUESTER GROUP
 @mcp.tool()
 async def update_requester_group(id: int,name: Optional[str] = None,description: Optional[str] = None) -> Dict[str, Any]:
-    """Update an existing requester group in Freshservice."""
+    """Update an requester group in Freshservice."""
     group_data = {}
     if name:
         group_data["name"] = name
@@ -2289,7 +2198,7 @@ async def update_solution_folder(
 #PUBLISH SOLUTION ARTICLE   
 @mcp.tool()
 async def publish_solution_article(article_id: int) -> Dict[str, Any]:
-    """Publish a solution article in Freshservice (status = 2)."""
+    """Publish a solution article in Freshservice."""
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/solutions/articles/{article_id}"
     headers = get_auth_headers()
 
