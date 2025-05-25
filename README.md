@@ -84,13 +84,13 @@ npx -y @smithery/cli install @effytech/freshservice_mcp --client claude
         "freshservice-mcp"
     ],
     "env": {
-      "FRESHSERVICE_API_KEY": "<YOUR_FRESHSERVICE_API_KEY>",
+      "FRESHSERVICE_APIKEY": "<YOUR_FRESHSERVICE_APIKEY>",
       "FRESHSERVICE_DOMAIN": "<YOUR_FRESHSERVICE_DOMAIN>"
     }
   }
 }
 ```
-**Important**: Replace `<YOUR_FRESHSERVICE_API_KEY>` with your actual API key and `<YOUR_FRESHSERVICE_DOMAIN>` with your domain (e.g., `yourcompany.freshservice.com`)
+**Important**: Replace `<YOUR_FRESHSERVICE_APIKEY>` with your actual API key and `<YOUR_FRESHSERVICE_DOMAIN>` with your domain (e.g., `yourcompany.freshservice.com`)
 
 ## Example Operations
 
@@ -107,7 +107,7 @@ Once configured, you can ask Claude to perform operations like:
 For testing purposes, you can start the server manually:
 
 ```bash
-uvx freshservice-mcp --env FRESHSERVICE_API_KEY=<your_api_key> --env FRESHSERVICE_DOMAIN=<your_domain>
+uvx freshservice-mcp --env FRESHSERVICE_APIKEY=<your_api_key> --env FRESHSERVICE_DOMAIN=<your_domain>
 ```
 
 ## Troubleshooting
