@@ -52,15 +52,29 @@ The server provides a comprehensive toolkit for Freshservice operations:
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `get_changes` | List all changes with pagination | `page`, `per_page` |
+| `get_changes` | List all changes with pagination | `page`, `per_page`, `query` |
+| `filter_changes` | Filter changes with advanced queries | `query`, `page`, `per_page` |
 | `get_change_by_id` | Retrieve single change details | `change_id` |
 | `create_change` | Create new change request | `requester_id`, `subject`, `description`, `priority`, `impact`, `status`, `risk`, `change_type` |
 | `update_change` | Update existing change | `change_id`, `change_fields` |
 | `close_change` | Close change with result explanation | `change_id`, `change_result_explanation` |
 | `delete_change` | Remove change | `change_id` |
-| `filter_changes` | Find changes matching criteria | `query`, `page` |
 | `get_change_tasks` | Get tasks for a change | `change_id` |
 | `create_change_note` | Add note to change | `change_id`, `body` |
+
+#### 🚨 Important: Query Syntax for Filtering
+
+When using `get_changes` or `filter_changes` with the `query` parameter, **the query string must be wrapped in double quotes** for the Freshservice API to work correctly:
+
+✅ **CORRECT**: `"status:3"`, `"approval_status:1 AND status:<6"`  
+❌ **WRONG**: `status:3` (will cause 500 Internal Server Error)
+
+**Common Query Examples:**
+- `"status:3"` - Changes awaiting approval
+- `"approval_status:1"` - Approved changes  
+- `"approval_status:1 AND status:<6"` - Approved changes that are not closed
+- `"planned_start_date:>'2025-07-14'"` - Changes starting after specific date
+- `"status:3 AND priority:1"` - High priority changes awaiting approval
 
 ## Getting Started
 
@@ -121,7 +135,6 @@ Once configured, you can ask Claude to perform operations like:
 - "Update the status of change request #45678 to 'Approved'"
 - "Close change #5092 with result explanation 'Successfully deployed to production. All tests passed.'"
 - "List all pending changes"
-- "Filter changes with status='open' and priority='high'"
 
 **Other Operations:**
 - "Show asset details for laptop with asset tag 'LT-2023-087'"
