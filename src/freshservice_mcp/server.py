@@ -55,6 +55,37 @@ class TicketPriority(IntEnum):
     MEDIUM = 2
     HIGH = 3
     URGENT = 4
+
+class ChangeStatus(IntEnum):
+    OPEN = 1
+    PLANNING = 2
+    AWAITING_APPROVAL = 3
+    PENDING_RELEASE = 4
+    PENDING_REVIEW = 5
+    CLOSED = 6
+
+class ChangePriority(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    URGENT = 4
+
+class ChangeImpact(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+
+class ChangeType(IntEnum):
+    MINOR = 1
+    STANDARD = 2
+    MAJOR = 3
+    EMERGENCY = 4
+
+class ChangeRisk(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    VERY_HIGH = 4
     
 class UnassignedForOptions(str, Enum):
     THIRTY_MIN = "30m"
@@ -358,6 +389,344 @@ async def get_ticket_by_id(ticket_id:int) -> str:
         response = await client.get(url,headers=headers)
         return response.json()
     
+#GET ALL CHANGES
+@mcp.tool()
+async def get_changes(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
+    """Get all changes from Freshservice with pagination support."""
+    
+    if page < 1:
+        return {"error": "Page number must be greater than 0"}
+    
+    if per_page < 1 or per_page > 100:
+        return {"error": "Page size must be between 1 and 100"}
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes"
+    
+    params = {
+        "page": page,
+        "per_page": per_page
+    }
+    
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            link_header = response.headers.get('Link', '')
+            pagination_info = parse_link_header(link_header)
+            
+            changes = response.json()
+            
+            return {
+                "changes": changes,
+                "pagination": {
+                    "current_page": page,
+                    "next_page": pagination_info.get("next"),
+                    "prev_page": pagination_info.get("prev"),
+                    "per_page": per_page
+                }
+            }
+            
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to fetch changes: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#GET CHANGE BY ID
+@mcp.tool()
+async def get_change_by_id(change_id: int) -> Dict[str, Any]:
+    """Get a specific change by ID in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to fetch change: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#CREATE CHANGE
+@mcp.tool()
+async def create_change(
+    requester_id: int,
+    subject: str,
+    description: str,
+    priority: Union[int, str],
+    impact: Union[int, str],
+    status: Union[int, str],
+    risk: Union[int, str],
+    change_type: Union[int, str],
+    group_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+    planned_start_date: Optional[str] = None,
+    planned_end_date: Optional[str] = None,
+    reason_for_change: Optional[str] = None,
+    change_impact: Optional[str] = None,
+    rollout_plan: Optional[str] = None,
+    backout_plan: Optional[str] = None,
+    custom_fields: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Create a new change in Freshservice."""
+    
+    try:
+        priority_val = int(priority)
+        impact_val = int(impact)
+        status_val = int(status)
+        risk_val = int(risk)
+        change_type_val = int(change_type)
+    except ValueError:
+        return {"error": "Invalid value for priority, impact, status, risk, or change_type"}
+
+    if (priority_val not in [e.value for e in ChangePriority] or
+        impact_val not in [e.value for e in ChangeImpact] or
+        status_val not in [e.value for e in ChangeStatus] or
+        risk_val not in [e.value for e in ChangeRisk] or
+        change_type_val not in [e.value for e in ChangeType]):
+        return {"error": "Invalid value for priority, impact, status, risk, or change_type"}
+
+    data = {
+        "requester_id": requester_id,
+        "subject": subject,
+        "description": description,
+        "priority": priority_val,
+        "impact": impact_val,
+        "status": status_val,
+        "risk": risk_val,
+        "change_type": change_type_val
+    }
+
+    if group_id:
+        data["group_id"] = group_id
+    if agent_id:
+        data["agent_id"] = agent_id
+    if department_id:
+        data["department_id"] = department_id
+    if planned_start_date:
+        data["planned_start_date"] = planned_start_date
+    if planned_end_date:
+        data["planned_end_date"] = planned_end_date
+
+    # Handle planning fields
+    planning_fields = {}
+    if reason_for_change:
+        planning_fields["reason_for_change"] = {
+            "description": reason_for_change
+        }
+    if change_impact:
+        planning_fields["change_impact"] = {
+            "description": change_impact
+        }
+    if rollout_plan:
+        planning_fields["rollout_plan"] = {
+            "description": rollout_plan
+        }
+    if backout_plan:
+        planning_fields["backout_plan"] = {
+            "description": backout_plan
+        }
+    
+    if planning_fields:
+        data["planning_fields"] = planning_fields
+
+    if custom_fields:
+        data["custom_fields"] = custom_fields
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                error_data = e.response.json()
+                if "errors" in error_data:
+                    return {"error": f"Validation Error: {error_data['errors']}"}
+            return {"error": f"Failed to create change - {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred - {str(e)}"}
+
+#UPDATE CHANGE
+@mcp.tool()
+async def update_change(change_id: int, change_fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an existing change in Freshservice. 
+    
+    To update the change result explanation when closing a change:
+    change_fields = {
+        "status": 6,  # Closed
+        "custom_fields": {
+            "change_result_explanation": "Your explanation here"
+        }
+    }
+    """
+    if not change_fields:
+        return {"error": "No fields provided for update"}
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    # Extract special fields
+    custom_fields = change_fields.pop('custom_fields', {})
+    planning_fields = change_fields.pop('planning_fields', {})
+    
+    update_data = {}
+    
+    # Add regular fields
+    for field, value in change_fields.items():
+        update_data[field] = value
+    
+    # Add custom fields if present
+    if custom_fields:
+        update_data['custom_fields'] = custom_fields
+    
+    # Add planning fields with proper structure if present
+    if planning_fields:
+        formatted_planning = {}
+        for field, value in planning_fields.items():
+            if isinstance(value, str):
+                formatted_planning[field] = {"description": value}
+            else:
+                formatted_planning[field] = value
+        update_data['planning_fields'] = formatted_planning
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=update_data)
+            response.raise_for_status()
+            
+            return {
+                "success": True,
+                "message": "Change updated successfully",
+                "change": response.json()
+            }
+            
+        except httpx.HTTPStatusError as e:
+            error_message = f"Failed to update change: {str(e)}"
+            try:
+                error_details = e.response.json()
+                if "errors" in error_details:
+                    error_message = f"Validation errors: {error_details['errors']}"
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "error": error_message
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"An unexpected error occurred: {str(e)}"
+            }
+
+#CLOSE CHANGE WITH RESULT
+@mcp.tool()
+async def close_change(
+    change_id: int,
+    change_result_explanation: str,
+    custom_fields: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Close a change and provide the result explanation.
+    This is a convenience function that updates status to Closed and sets the result explanation."""
+    
+    update_data = {
+        "status": ChangeStatus.CLOSED.value,
+        "custom_fields": {
+            "change_result_explanation": change_result_explanation
+        }
+    }
+    
+    # Merge additional custom fields if provided
+    if custom_fields:
+        update_data["custom_fields"].update(custom_fields)
+    
+    return await update_change(change_id, update_data)
+
+#DELETE CHANGE
+@mcp.tool()
+async def delete_change(change_id: int) -> str:
+    """Delete a change in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(url, headers=headers)
+
+        if response.status_code == 204:
+            return "Change deleted successfully"
+        elif response.status_code == 404:
+            return "Error: Change not found"
+        else:
+            try:
+                response_data = response.json()
+                return f"Error: {response_data.get('error', 'Failed to delete change')}"
+            except ValueError:
+                return "Error: Unexpected response format"
+
+#FILTER CHANGES
+@mcp.tool()
+async def filter_changes(query: str, page: int = 1) -> Dict[str, Any]:
+    """Filter changes in Freshservice based on a query."""
+    encoded_query = urllib.parse.quote(query)
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/filter?query={encoded_query}&page={page}"
+    
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#GET CHANGE TASKS
+@mcp.tool()
+async def get_change_tasks(change_id: int) -> Dict[str, Any]:
+    """Get all tasks associated with a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to fetch change tasks: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#CREATE CHANGE NOTE
+@mcp.tool()
+async def create_change_note(change_id: int, body: str) -> Dict[str, Any]:
+    """Create a note for a change in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes"
+    headers = get_auth_headers()
+    data = {
+        "body": body
+    }
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to create change note: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
 #GET SERVICE ITEMS
 @mcp.tool()
 async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
