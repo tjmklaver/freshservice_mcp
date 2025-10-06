@@ -55,6 +55,37 @@ class TicketPriority(IntEnum):
     MEDIUM = 2
     HIGH = 3
     URGENT = 4
+
+class ChangeStatus(IntEnum):
+    OPEN = 1
+    PLANNING = 2
+    AWAITING_APPROVAL = 3
+    PENDING_RELEASE = 4
+    PENDING_REVIEW = 5
+    CLOSED = 6
+
+class ChangePriority(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    URGENT = 4
+
+class ChangeImpact(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+
+class ChangeType(IntEnum):
+    MINOR = 1
+    STANDARD = 2
+    MAJOR = 3
+    EMERGENCY = 4
+
+class ChangeRisk(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    VERY_HIGH = 4
     
 class UnassignedForOptions(str, Enum):
     THIRTY_MIN = "30m"
@@ -305,7 +336,15 @@ async def update_ticket(ticket_id: int, ticket_fields: Dict[str, Any]) -> Dict[s
 #FILTER TICKET 
 @mcp.tool()
 async def filter_tickets(query: str, page: int = 1, workspace_id: Optional[int] = None) -> Dict[str, Any]:
-    """Filter the tickets in Freshservice."""
+    """Filter the tickets in Freshservice.
+    
+    Args:
+        query: Filter query string (e.g., "status:2 AND priority:1")
+               Note: Some Freshservice endpoints may require queries to be wrapped in double quotes.
+               If you get 500 errors, try wrapping your query in double quotes: "your_query_here"
+        page: Page number (default: 1)  
+        workspace_id: Optional workspace ID filter
+    """
     encoded_query = urllib.parse.quote(query)
     url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/tickets/filter?query={encoded_query}&page={page}"
     
@@ -358,6 +397,969 @@ async def get_ticket_by_id(ticket_id:int) -> str:
         response = await client.get(url,headers=headers)
         return response.json()
     
+#GET ALL CHANGES
+@mcp.tool()
+async def get_changes(
+    page: Optional[int] = 1, 
+    per_page: Optional[int] = 30,
+    query: Optional[str] = None,
+    view: Optional[str] = None,
+    sort: Optional[str] = None,
+    order_by: Optional[str] = None,
+    updated_since: Optional[str] = None,
+    workspace_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """Get all changes from Freshservice with pagination and filtering support.
+    
+    Args:
+        page: Page number (default: 1)
+        per_page: Number of items per page (1-100, default: 30)
+        query: Filter query string (e.g., "priority:4 OR priority:3", "status:2 AND priority:1")
+               **IMPORTANT**: Query must be wrapped in double quotes for filtering to work!
+               Examples: "status:3", "approval_status:1 AND status:<6", "planned_start_date:>'2025-07-14'"
+        view: Accepts the name or ID of views (e.g., 'my_open', 'unassigned')
+        sort: Field to sort by (e.g., 'priority', 'created_at')
+        order_by: Sort order ('asc' or 'desc', default: 'desc')
+        updated_since: Changes updated since date (ISO format: '2024-10-19T02:00:00Z')
+        workspace_id: Filter by workspace ID (0 for all workspaces)
+        
+    Query examples:
+        - "priority:4 OR priority:3" - Urgent and High priority changes
+        - "priority:>3 AND group_id:11 AND status:1" - High priority open changes for group 11
+        - "status:2" - Open changes
+        - "status:<6" - Not closed changes (statuses 1-5)
+        - "approval_status:1" - Approved changes
+        - "planned_end_date:<'2025-01-14'" - Changes with end date before specified date
+        
+    Note: Query and view parameters cannot be used together
+    """
+    
+    if page < 1:
+        return {"error": "Page number must be greater than 0"}
+    
+    if per_page < 1 or per_page > 100:
+        return {"error": "Page size must be between 1 and 100"}
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes"
+    
+    params = {
+        "page": page,
+        "per_page": per_page
+    }
+    
+    if query:
+        params["query"] = query
+    if view:
+        params["view"] = view
+    if sort:
+        params["sort"] = sort
+    if order_by:
+        params["order_by"] = order_by
+    if updated_since:
+        params["updated_since"] = updated_since
+    if workspace_id is not None:
+        params["workspace_id"] = workspace_id
+    
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            link_header = response.headers.get('Link', '')
+            pagination_info = parse_link_header(link_header)
+            
+            changes = response.json()
+            
+            return {
+                "changes": changes,
+                "pagination": {
+                    "current_page": page,
+                    "next_page": pagination_info.get("next"),
+                    "prev_page": pagination_info.get("prev"),
+                    "per_page": per_page
+                }
+            }
+            
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#GET CHANGE BY ID
+@mcp.tool()
+async def get_change_by_id(change_id: int) -> Dict[str, Any]:
+    """Get a specific change by ID in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to fetch change: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#CREATE CHANGE
+@mcp.tool()
+async def create_change(
+    requester_id: int,
+    subject: str,
+    description: str,
+    priority: Union[int, str],
+    impact: Union[int, str],
+    status: Union[int, str],
+    risk: Union[int, str],
+    change_type: Union[int, str],
+    group_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+    planned_start_date: Optional[str] = None,
+    planned_end_date: Optional[str] = None,
+    reason_for_change: Optional[str] = None,
+    change_impact: Optional[str] = None,
+    rollout_plan: Optional[str] = None,
+    backout_plan: Optional[str] = None,
+    custom_fields: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Create a new change in Freshservice."""
+    
+    try:
+        priority_val = int(priority)
+        impact_val = int(impact)
+        status_val = int(status)
+        risk_val = int(risk)
+        change_type_val = int(change_type)
+    except ValueError:
+        return {"error": "Invalid value for priority, impact, status, risk, or change_type"}
+
+    if (priority_val not in [e.value for e in ChangePriority] or
+        impact_val not in [e.value for e in ChangeImpact] or
+        status_val not in [e.value for e in ChangeStatus] or
+        risk_val not in [e.value for e in ChangeRisk] or
+        change_type_val not in [e.value for e in ChangeType]):
+        return {"error": "Invalid value for priority, impact, status, risk, or change_type"}
+
+    data = {
+        "requester_id": requester_id,
+        "subject": subject,
+        "description": description,
+        "priority": priority_val,
+        "impact": impact_val,
+        "status": status_val,
+        "risk": risk_val,
+        "change_type": change_type_val
+    }
+
+    if group_id:
+        data["group_id"] = group_id
+    if agent_id:
+        data["agent_id"] = agent_id
+    if department_id:
+        data["department_id"] = department_id
+    if planned_start_date:
+        data["planned_start_date"] = planned_start_date
+    if planned_end_date:
+        data["planned_end_date"] = planned_end_date
+
+    # Handle planning fields
+    planning_fields = {}
+    if reason_for_change:
+        planning_fields["reason_for_change"] = {
+            "description": reason_for_change
+        }
+    if change_impact:
+        planning_fields["change_impact"] = {
+            "description": change_impact
+        }
+    if rollout_plan:
+        planning_fields["rollout_plan"] = {
+            "description": rollout_plan
+        }
+    if backout_plan:
+        planning_fields["backout_plan"] = {
+            "description": backout_plan
+        }
+    
+    if planning_fields:
+        data["planning_fields"] = planning_fields
+
+    if custom_fields:
+        data["custom_fields"] = custom_fields
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                error_data = e.response.json()
+                if "errors" in error_data:
+                    return {"error": f"Validation Error: {error_data['errors']}"}
+            return {"error": f"Failed to create change - {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred - {str(e)}"}
+
+#UPDATE CHANGE
+@mcp.tool()
+async def update_change(change_id: int, change_fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an existing change in Freshservice. 
+    
+    To update the change result explanation when closing a change:
+    change_fields = {
+        "status": 6,  # Closed
+        "custom_fields": {
+            "change_result_explanation": "Your explanation here"
+        }
+    }
+    """
+    if not change_fields:
+        return {"error": "No fields provided for update"}
+
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    # Extract special fields
+    custom_fields = change_fields.pop('custom_fields', {})
+    planning_fields = change_fields.pop('planning_fields', {})
+    
+    update_data = {}
+    
+    # Add regular fields
+    for field, value in change_fields.items():
+        update_data[field] = value
+    
+    # Add custom fields if present
+    if custom_fields:
+        update_data['custom_fields'] = custom_fields
+    
+    # Add planning fields with proper structure if present
+    if planning_fields:
+        formatted_planning = {}
+        for field, value in planning_fields.items():
+            if isinstance(value, str):
+                formatted_planning[field] = {"description": value}
+            else:
+                formatted_planning[field] = value
+        update_data['planning_fields'] = formatted_planning
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=update_data)
+            response.raise_for_status()
+            
+            return {
+                "success": True,
+                "message": "Change updated successfully",
+                "change": response.json()
+            }
+            
+        except httpx.HTTPStatusError as e:
+            error_message = f"Failed to update change: {str(e)}"
+            try:
+                error_details = e.response.json()
+                if "errors" in error_details:
+                    error_message = f"Validation errors: {error_details['errors']}"
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "error": error_message
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"An unexpected error occurred: {str(e)}"
+            }
+
+#CLOSE CHANGE WITH RESULT
+@mcp.tool()
+async def close_change(
+    change_id: int,
+    change_result_explanation: str,
+    custom_fields: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Close a change and provide the result explanation.
+    This is a convenience function that updates status to Closed and sets the result explanation."""
+    
+    update_data = {
+        "status": ChangeStatus.CLOSED.value,
+        "custom_fields": {
+            "change_result_explanation": change_result_explanation
+        }
+    }
+    
+    # Merge additional custom fields if provided
+    if custom_fields:
+        update_data["custom_fields"].update(custom_fields)
+    
+    return await update_change(change_id, update_data)
+
+#DELETE CHANGE
+@mcp.tool()
+async def delete_change(change_id: int) -> str:
+    """Delete a change in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(url, headers=headers)
+
+        if response.status_code == 204:
+            return "Change deleted successfully"
+        elif response.status_code == 404:
+            return "Error: Change not found"
+        else:
+            try:
+                response_data = response.json()
+                return f"Error: {response_data.get('error', 'Failed to delete change')}"
+            except ValueError:
+                return "Error: Unexpected response format"
+
+
+# FILTER CHANGES
+@mcp.tool()
+async def filter_changes(
+    query: str,
+    page: int = 1,
+    per_page: int = 30,
+    sort: Optional[str] = None,
+    order_by: Optional[str] = None,
+    workspace_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """Filter changes in Freshservice based on a query.
+    
+    Args:
+        query: Filter query string (e.g., "status:2 AND priority:1" or "approval_status:1 AND planned_end_date:<'2025-01-14' AND status:<6")
+               **CRITICAL**: Query must be wrapped in double quotes for filtering to work!
+               Without quotes: status:3 → 500 Internal Server Error
+               With quotes: "status:3" → Works perfectly
+        page: Page number (default: 1)
+        per_page: Number of items per page (1-100, default: 30)
+        sort: Field to sort by
+        order_by: Sort order ('asc' or 'desc')
+        workspace_id: Optional workspace ID filter
+        
+    Common query examples:
+        - "status:2" - Open changes
+        - "status:<6" - Not closed changes (statuses 1-5)
+        - "approval_status:1" - Approved changes
+        - "planned_end_date:<'2025-01-14'" - Changes with end date before specified date
+        - "priority:1 AND status:2" - High priority open changes
+        - "approval_status:1 AND status:3" - Approved changes awaiting implementation
+    """
+    # Use the main get_changes function with query parameter
+    # This is the correct approach since /api/v2/changes/filter doesn't exist
+    return await get_changes(
+        page=page,
+        per_page=per_page,
+        query=query,
+        sort=sort,
+        order_by=order_by,
+        workspace_id=workspace_id
+    )
+
+#GET CHANGE TASKS
+@mcp.tool()
+async def get_change_tasks(change_id: int) -> Dict[str, Any]:
+    """Get all tasks associated with a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks"
+    headers = get_auth_headers()
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to fetch change tasks: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+#CREATE CHANGE NOTE
+@mcp.tool()
+async def create_change_note(change_id: int, body: str) -> Dict[str, Any]:
+    """Create a note for a change in Freshservice."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes"
+    headers = get_auth_headers()
+    data = {
+        "body": body
+    }
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"Failed to create change note: {str(e)}"}
+        except Exception as e:
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+
+# CHANGES APPROVAL ENDPOINTS
+
+#CREATE CHANGE APPROVAL GROUP
+@mcp.tool()
+async def create_change_approval_group(
+    change_id: int,
+    name: str,
+    approver_ids: List[int],
+    approval_type: str = "everyone"
+) -> Dict[str, Any]:
+    """Create an approval group for a change.
+    
+    Args:
+        change_id: The ID of the change
+        name: Name of the approval group
+        approver_ids: List of agent IDs who can approve
+        approval_type: 'everyone' or 'any' (default: 'everyone')
+    """
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approval_groups"
+    headers = get_auth_headers()
+    data = {
+        "name": name,
+        "approver_ids": approver_ids,
+        "approval_type": approval_type
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#UPDATE CHANGE APPROVAL GROUP
+@mcp.tool()
+async def update_change_approval_group(
+    change_id: int,
+    group_id: int,
+    name: Optional[str] = None,
+    approver_ids: Optional[List[int]] = None,
+    approval_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update a change approval group."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approval_groups/{group_id}"
+    headers = get_auth_headers()
+    
+    data = {}
+    if name is not None:
+        data["name"] = name
+    if approver_ids is not None:
+        data["approver_ids"] = approver_ids
+    if approval_type is not None:
+        data["approval_type"] = approval_type
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#CANCEL CHANGE APPROVAL GROUP
+@mcp.tool()
+async def cancel_change_approval_group(change_id: int, group_id: int) -> Dict[str, Any]:
+    """Cancel a change approval group."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approval_groups/{group_id}/cancel"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers)
+            response.raise_for_status()
+            return {"success": True, "message": "Approval group cancelled successfully"}
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#UPDATE APPROVAL CHAIN RULE FOR CHANGE
+@mcp.tool()
+async def update_approval_chain_rule_change(
+    change_id: int,
+    approval_chain_type: str = "parallel"
+) -> Dict[str, Any]:
+    """Update approval chain rule for a change.
+    
+    Args:
+        change_id: The ID of the change
+        approval_chain_type: Type of approval chain ('parallel' or 'sequential')
+    """
+    if approval_chain_type not in ["parallel", "sequential"]:
+        return {"error": "approval_chain_type must be 'parallel' or 'sequential'"}
+    
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approval_chain"
+    headers = get_auth_headers()
+    data = {"approval_chain_type": approval_chain_type}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#LIST CHANGE APPROVAL GROUPS
+@mcp.tool()
+async def list_change_approval_groups(change_id: int) -> Dict[str, Any]:
+    """List all approval groups within a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approval_groups"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#VIEW CHANGE APPROVAL
+@mcp.tool()
+async def view_change_approval(change_id: int, approval_id: int) -> Dict[str, Any]:
+    """View a specific change approval."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approvals/{approval_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#LIST CHANGE APPROVALS
+@mcp.tool()
+async def list_change_approvals(change_id: int) -> Dict[str, Any]:
+    """List all change approvals."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approvals"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#SEND CHANGE APPROVAL REMINDER
+@mcp.tool()
+async def send_change_approval_reminder(change_id: int, approval_id: int) -> Dict[str, Any]:
+    """Send reminder for a change approval."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approvals/{approval_id}/resend_approval"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers)
+            response.raise_for_status()
+            return {"success": True, "message": "Reminder sent successfully"}
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#CANCEL CHANGE APPROVAL
+@mcp.tool()
+async def cancel_change_approval(change_id: int, approval_id: int) -> Dict[str, Any]:
+    """Cancel a change approval."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/approvals/{approval_id}/cancel"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers)
+            response.raise_for_status()
+            return {"success": True, "message": "Approval cancelled successfully"}
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+# CHANGES NOTES ENDPOINTS
+
+#VIEW CHANGE NOTE
+@mcp.tool()
+async def view_change_note(change_id: int, note_id: int) -> Dict[str, Any]:
+    """View a specific note for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes/{note_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#LIST CHANGE NOTES
+@mcp.tool()
+async def list_change_notes(change_id: int) -> Dict[str, Any]:
+    """List all notes for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#UPDATE CHANGE NOTE
+@mcp.tool()
+async def update_change_note(change_id: int, note_id: int, body: str) -> Dict[str, Any]:
+    """Update a note for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes/{note_id}"
+    headers = get_auth_headers()
+    data = {"body": body}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#DELETE CHANGE NOTE
+@mcp.tool()
+async def delete_change_note(change_id: int, note_id: int) -> Dict[str, Any]:
+    """Delete a note for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/notes/{note_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(url, headers=headers)
+            if response.status_code == 204:
+                return {"success": True, "message": "Note deleted successfully"}
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+# CHANGES TASKS ENDPOINTS
+
+#CREATE CHANGE TASK
+@mcp.tool()
+async def create_change_task(
+    change_id: int,
+    title: str,
+    description: str,
+    status: int = 1,
+    priority: int = 1,
+    assigned_to_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+    due_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a task for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks"
+    headers = get_auth_headers()
+    
+    data = {
+        "title": title,
+        "description": description,
+        "status": status,
+        "priority": priority
+    }
+    
+    if assigned_to_id:
+        data["assigned_to_id"] = assigned_to_id
+    if group_id:
+        data["group_id"] = group_id
+    if due_date:
+        data["due_date"] = due_date
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#VIEW CHANGE TASK
+@mcp.tool()
+async def view_change_task(change_id: int, task_id: int) -> Dict[str, Any]:
+    """View a specific task for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks/{task_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#UPDATE CHANGE TASK
+@mcp.tool()
+async def update_change_task(
+    change_id: int,
+    task_id: int,
+    task_fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Update a task for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks/{task_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=task_fields)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#DELETE CHANGE TASK
+@mcp.tool()
+async def delete_change_task(change_id: int, task_id: int) -> Dict[str, Any]:
+    """Delete a task for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/tasks/{task_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(url, headers=headers)
+            if response.status_code == 204:
+                return {"success": True, "message": "Task deleted successfully"}
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+# CHANGES TIME ENTRIES ENDPOINTS
+
+#CREATE CHANGE TIME ENTRY
+@mcp.tool()
+async def create_change_time_entry(
+    change_id: int,
+    time_spent: str,
+    note: str,
+    agent_id: int,
+    executed_at: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a time entry for a change.
+    
+    Args:
+        change_id: The ID of the change
+        time_spent: Time spent in format "hh:mm" (e.g., "02:30")
+        note: Description of the work done
+        agent_id: ID of the agent who performed the work
+        executed_at: When the work was done (ISO format)
+    """
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/time_entries"
+    headers = get_auth_headers()
+    
+    data = {
+        "time_spent": time_spent,
+        "note": note,
+        "agent_id": agent_id
+    }
+    
+    if executed_at:
+        data["executed_at"] = executed_at
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#VIEW CHANGE TIME ENTRY
+@mcp.tool()
+async def view_change_time_entry(change_id: int, time_entry_id: int) -> Dict[str, Any]:
+    """View a specific time entry for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/time_entries/{time_entry_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#LIST CHANGE TIME ENTRIES
+@mcp.tool()
+async def list_change_time_entries(change_id: int) -> Dict[str, Any]:
+    """List all time entries for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/time_entries"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#UPDATE CHANGE TIME ENTRY
+@mcp.tool()
+async def update_change_time_entry(
+    change_id: int,
+    time_entry_id: int,
+    time_spent: Optional[str] = None,
+    note: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update a time entry for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/time_entries/{time_entry_id}"
+    headers = get_auth_headers()
+    
+    data = {}
+    if time_spent is not None:
+        data["time_spent"] = time_spent
+    if note is not None:
+        data["note"] = note
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#DELETE CHANGE TIME ENTRY
+@mcp.tool()
+async def delete_change_time_entry(change_id: int, time_entry_id: int) -> Dict[str, Any]:
+    """Delete a time entry for a change."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/time_entries/{time_entry_id}"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(url, headers=headers)
+            if response.status_code == 204:
+                return {"success": True, "message": "Time entry deleted successfully"}
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+# OTHER CHANGES ENDPOINTS
+
+#MOVE CHANGE
+@mcp.tool()
+async def move_change(change_id: int, workspace_id: int) -> Dict[str, Any]:
+    """Move a change to another workspace."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/changes/{change_id}/move_workspace"
+    headers = get_auth_headers()
+    data = {"workspace_id": workspace_id}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
+#LIST CHANGE FIELDS
+@mcp.tool()
+async def list_change_fields() -> Dict[str, Any]:
+    """List all change fields."""
+    url = f"https://{FRESHSERVICE_DOMAIN}/api/v2/change_form_fields"
+    headers = get_auth_headers()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            try:
+                return {"error": str(e), "details": e.response.json()}
+            except Exception:
+                return {"error": str(e), "raw_response": e.response.text}
+
 #GET SERVICE ITEMS
 @mcp.tool()
 async def list_service_items(page: Optional[int] = 1, per_page: Optional[int] = 30) -> Dict[str, Any]:
