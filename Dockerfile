@@ -18,5 +18,7 @@ COPY src ./src
 # Install project and dependencies
 RUN pip install --no-cache-dir .
 
+EXPOSE 8000
+
 # Use python module entrypoint to start the MCP server
 ENTRYPOINT ["python", "-m", "freshservice_mcp.server"]
